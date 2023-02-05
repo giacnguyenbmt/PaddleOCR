@@ -1,15 +1,15 @@
-import os
-import sys
-
 import argparse
-import cv2
-import numpy as np
+import glob
 import math
-import onnxruntime as ort
+import os
+import re
+import sys
 import time
 import traceback
-import paddle
-import re
+
+import cv2
+import numpy as np
+import onnxruntime as ort
 
 
 def str2bool(v):
@@ -22,16 +22,15 @@ def init_args():
     parser.add_argument("--image_dir", type=str)
     parser.add_argument("--rec_algorithm", type=str, default='SVTR_LCNet')
     parser.add_argument("--rec_model_dir", type=str)
-    parser.add_argument("--rec_image_shape", type=str, default="3, 48, 320")
+    parser.add_argument("--rec_image_shape", type=str, default="3, 48, 192")
     parser.add_argument("--rec_batch_num", type=int, default=1)
-    parser.add_argument("--max_text_length", type=int, default=25)
     parser.add_argument(
         "--rec_char_dict_path",
         type=str,
-        default="./ppocr/utils/ppocr_keys_v1.txt")
-    parser.add_argument("--use_space_char", type=str2bool, default=True)
-
-    parser.add_argument("--warmup", type=str2bool, default=False)
+        default="ppocr/utils/dict/lp_dict.txt"
+    )
+    parser.add_argument("--use_space_char", type=str2bool, default=False)
+    parser.add_argument("--dlc_image_dir", type=str)
 
     return parser
 
@@ -157,8 +156,6 @@ class CTCLabelDecode(object):
     def __call__(self, preds, label=None, *args, **kwargs):
         if isinstance(preds, tuple) or isinstance(preds, list):
             preds = preds[-1]
-        if isinstance(preds, paddle.Tensor):
-            preds = preds.numpy()
         preds_idx = preds.argmax(axis=2)
         preds_prob = preds.max(axis=2)
         text = self.decode(preds_idx, preds_prob, is_remove_duplicate=True)
@@ -248,6 +245,60 @@ class TextRecognizer(object):
         padding_im[:, :, 0:resized_w] = resized_image
         return padding_im
 
+    def dlc_data_from_cv2(self, img_list):
+        img_num = len(img_list)
+        batch_num = 1
+        dlc_data_list = []
+        # Calculate the aspect ratio of all text bars
+        imgC, imgH, imgW = self.rec_image_shape[:3]
+        max_wh_ratio = imgW / imgH
+        for idx in range(0, img_num, batch_num):
+            norm_img = self.resize_norm_img(
+                img_list[idx], max_wh_ratio
+            )
+            dlc_data_list.append(norm_img.transpose((1, 2, 0)))
+        return dlc_data_list
+
+    def dlc_data_predict(self, img_list):
+        img_num = len(img_list)
+        # Calculate the aspect ratio of all text bars
+        width_list = []
+        for img in img_list:
+            width_list.append(img.shape[1] / float(img.shape[0]))
+        # Sorting can speed up the recognition process
+        indices = np.argsort(np.array(width_list))
+        rec_res = [['', 0.0]] * img_num
+        batch_num = self.rec_batch_num
+        st = time.time()
+        for beg_img_no in range(0, img_num, batch_num):
+            end_img_no = min(img_num, beg_img_no + batch_num)
+            norm_img_batch = []
+            imgC, imgH, imgW = self.rec_image_shape[:3]
+            max_wh_ratio = imgW / imgH
+            # max_wh_ratio = 0
+            for ino in range(beg_img_no, end_img_no):
+                h, w = img_list[indices[ino]].shape[0:2]
+                wh_ratio = w * 1.0 / h
+                max_wh_ratio = max(max_wh_ratio, wh_ratio)
+            for ino in range(beg_img_no, end_img_no):
+                norm_img = img_list[indices[ino]].transpose((2, 0, 1))
+                norm_img = norm_img[np.newaxis, :]
+                norm_img_batch.append(norm_img)
+            norm_img_batch = np.concatenate(norm_img_batch)
+            norm_img_batch = norm_img_batch.copy()
+
+            if self.use_onnx:
+                input_dict = {}
+                input_dict[self.input_tensor.name] = norm_img_batch
+                outputs = self.predictor.run(self.output_tensors,
+                                                input_dict)
+                preds = outputs[0]
+
+            rec_result = self.postprocess_op(preds)
+            for rno in range(len(rec_result)):
+                rec_res[indices[beg_img_no + rno]] = rec_result[rno]
+        return rec_res, time.time() - st
+
     def __call__(self, img_list):
         img_num = len(img_list)
         # Calculate the aspect ratio of all text bars
@@ -289,18 +340,68 @@ class TextRecognizer(object):
                 rec_res[indices[beg_img_no + rno]] = rec_result[rno]
         return rec_res, time.time() - st
 
+def create_dlc_data(args):
+    image_file_list = get_image_file_list(args.image_dir)
+    text_recognizer = TextRecognizer(args)
+    valid_image_file_list = []
+    img_list = []
+    dlc_image_dir = args.dlc_image_dir
+    if os.path.isdir(dlc_image_dir) is False:
+        os.makedirs(dlc_image_dir)
+
+    for image_file in image_file_list:
+        img, flag, _ = check_and_read(image_file)
+        if not flag:
+            img = cv2.imread(image_file)
+        if img is None:
+            print("error in loading image:{}".format(image_file))
+            continue
+        valid_image_file_list.append(image_file)
+        img_list.append(img)
+
+    dlc_data_list = text_recognizer.dlc_data_from_cv2(img_list)
+        
+    for ino in range(len(img_list)):
+        image_file = os.path.split(valid_image_file_list[ino])[-1]
+        image_name = os.path.splitext(image_file)[0]
+        save_dlc_path = os.path.join(
+            dlc_image_dir,
+            image_name + '.raw'
+        )
+        dlc_data_list[ino].tofile(save_dlc_path)
+
+def predict_onnx_from_dlc(args):
+    image_file_list = glob.glob(os.path.join(
+        args.dlc_image_dir, '*.raw'
+    ))
+    image_file_list = sorted(image_file_list)
+    text_recognizer = TextRecognizer(args)
+    valid_image_file_list = []
+    img_list = []
+    imgC, imgH, imgW = text_recognizer.rec_image_shape
+
+    for image_file in image_file_list:
+        img = np.fromfile(image_file, dtype=np.float32)
+        img = img.reshape((imgH, imgW, imgC))
+        valid_image_file_list.append(image_file)
+        img_list.append(img)
+
+    try:
+        rec_res, _ = text_recognizer.dlc_data_predict(img_list)
+    except Exception as E:
+        print(traceback.format_exc())
+        print(E)
+        exit()
+        
+    for ino in range(len(img_list)):
+        print("Predicts of {}:{}".format(valid_image_file_list[ino],
+                                               rec_res[ino]))
 
 def main(args):
     image_file_list = get_image_file_list(args.image_dir)
     text_recognizer = TextRecognizer(args)
     valid_image_file_list = []
     img_list = []
-
-    # warmup 2 times
-    if args.warmup:
-        img = np.random.uniform(0, 255, [48, 320, 3]).astype(np.uint8)
-        for i in range(2):
-            res = text_recognizer([img] * int(args.rec_batch_num))
 
     for image_file in image_file_list:
         img, flag, _ = check_and_read(image_file)
@@ -326,3 +427,4 @@ def main(args):
 
 if __name__ == "__main__":
     main(parse_args())
+    
