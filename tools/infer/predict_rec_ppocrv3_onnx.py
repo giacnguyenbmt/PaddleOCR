@@ -397,6 +397,30 @@ def predict_onnx_from_dlc(args):
         print("Predicts of {}:{}".format(valid_image_file_list[ino],
                                                rec_res[ino]))
 
+def decode_dlc(result_dir, 
+               rec_char_dict_path='ppocr/utils/dict/lp_dict.txt', 
+               use_space_char=False, 
+               rec_image_shape=(1, 24, 34)):
+    postprocess_params = {
+        "character_dict_path": rec_char_dict_path,
+        "use_space_char": use_space_char
+    }
+    postprocess_op = CTCLabelDecode(**postprocess_params)
+
+    raw_output_list = sorted(glob.glob(os.path.join(
+        result_dir,
+        'Result_*',
+        '*.raw'
+    )))
+    for output_file in raw_output_list:
+        preds = np.fromfile(output_file, dtype=np.float32)
+        preds = preds.reshape(rec_image_shape)
+        rec_result = postprocess_op(preds)
+        print("Predicts of {}:{}".format(
+            output_file,
+            rec_result
+        ))
+
 def main(args):
     image_file_list = get_image_file_list(args.image_dir)
     text_recognizer = TextRecognizer(args)
