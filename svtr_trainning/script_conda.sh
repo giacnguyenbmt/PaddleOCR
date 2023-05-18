@@ -21,14 +21,14 @@ python tools/train.py -c configs/rec/rec_svtrnet_large_lpr.yml -o \
     Global.pretrained_model=models/rec_svtr_large_none_ctc_ch_train/best_accuracy.pdparams \
     Global.eval_batch_step="[0, 4478]" \
     Train.dataset.data_dir="/" \
-    Train.dataset.label_file_list=[/media/lpr_vht_hnc_v4/train.txt] \
+    Train.dataset.label_file_list=[/media/a100-5g/lpr_vht_hnc_v4/train.txt] \
     Eval.dataset.data_dir="/" \
-    Eval.dataset.label_file_list=[/media/lpr_vht_hnc_v4/val.txt]
+    Eval.dataset.label_file_list=[/media/a100-5g/lpr_vht_hnc_v4/val.txt]
 # train with a specific gpu
 #python3 -m paddle.distributed.launch --log_dir=./debug/ --gpus '0' tools/train.py -c configs/rec/rec_svtrnet_large_lpr.yml -o \
     # Global.pretrained_model=models/rec_svtr_large_none_ctc_ch_train/best_accuracy.pdparams \
     # Global.eval_batch_step="[0, 4478]" \
     # Train.dataset.data_dir="/" \
-    # Train.dataset.label_file_list=[/media/lpr_vht_hnc_v4/train.txt] \
+    # Train.dataset.label_file_list=[/media/a100-5g/lpr_vht_hnc_v4/train.txt] \
     # Eval.dataset.data_dir="/" \
-    # Eval.dataset.label_file_list=[/media/lpr_vht_hnc_v4/val.txt]
+    # Eval.dataset.label_file_list=[/media/a100-5g/lpr_vht_hnc_v4/val.txt]

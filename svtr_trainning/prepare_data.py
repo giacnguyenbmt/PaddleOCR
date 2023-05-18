@@ -64,12 +64,12 @@ def create_label_file(real_dir,
 
 
 if __name__ == '__main__':
-    real_dir = '/media/nguyenpdg/lpr_vht_hnc_v4/train'
-    synth_dir = '/media/nguyenpdg/lpr_vht_hnc_v4/synth'
-    dst_file = '/media/nguyenpdg/lpr_vht_hnc_v4/train.txt'
+    real_dir = '/media/a100-5g/nguyenpdg/lpr_vht_hnc_v4/train'
+    synth_dir = '/media/a100-5g/nguyenpdg/lpr_vht_hnc_v4/synth'
+    dst_file = '/media/a100-5g/nguyenpdg/lpr_vht_hnc_v4/train.txt'
     create_label_file(real_dir, synth_dir, dst_file)
 
-    real_dir = '/media/nguyenpdg/lpr_vht_hnc_v4/validate'
+    real_dir = '/media/a100-5g/nguyenpdg/lpr_vht_hnc_v4/validate'
     synth_dir = None
-    dst_file = '/media/nguyenpdg/lpr_vht_hnc_v4/val.txt'
+    dst_file = '/media/a100-5g/nguyenpdg/lpr_vht_hnc_v4/val.txt'
     create_label_file(real_dir, synth_dir, dst_file)
