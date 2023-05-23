@@ -38,3 +38,5 @@ python3 -m paddle.distributed.launch --log_dir=./debug/ --gpus '0' tools/train.p
     Train.dataset.label_file_list=[/data/lpr_vht_hnc_v4/docker_train.txt] \
     Eval.dataset.data_dir="/" \
     Eval.dataset.label_file_list=[/data/lpr_vht_hnc_v4/docker_val.txt]
+
+# Thank you so much
