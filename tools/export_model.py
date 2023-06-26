@@ -37,7 +37,13 @@ def export_single_model(model,
                         logger,
                         input_shape=None,
                         quanter=None):
-    if arch_config["algorithm"] == "SRN":
+    if arch_config["algorithm"] == "LPRNet":
+        other_shape = [
+            paddle.static.InputSpec(
+                shape=[None] + input_shape, dtype="float32")
+        ]
+        model = to_static(model, input_spec=other_shape)
+    elif arch_config["algorithm"] == "SRN":
         max_text_length = arch_config["Head"]["max_text_length"]
         other_shape = [
             paddle.static.InputSpec(
@@ -250,6 +256,9 @@ def main():
             "name"] != 'MultiHead':
         input_shape = config["Eval"]["dataset"]["transforms"][-2][
             'SVTRRecResizeImg']['image_shape']
+    if arch_config["algorithm"] == "LPRNet":
+        input_shape = config["Eval"]["dataset"]["transforms"][-2][
+            'RecResizeImg']['image_shape']
     else:
         input_shape = None
 
